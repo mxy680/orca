@@ -1,0 +1,33 @@
+# Node
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+**/.next/
+out/
+
+# Builds
+build/
+dist/
+.astro/
+.turbo/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS/Editor
+.DS_Store
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Coverage
+coverage/
+
+# Misc
+.vercel/
+*.local
