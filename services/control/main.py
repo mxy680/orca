@@ -5,11 +5,37 @@ from typing import Dict
 import anyio
 
 from .kernel_manager import KernelManager, KernelCreateRequest, ExecuteRequest
+from .k8s_manager import K8sKernelManager  # type: ignore
+import os
+import asyncio
 
 app = FastAPI(title="Orca Control API", version="0.1.0")
 
-# Single, in-process manager for dev
-manager = KernelManager()
+BACKEND = os.environ.get("ORCA_KERNEL_BACKEND", "local").lower()
+
+# Select backend manager
+if BACKEND == "k8s":
+    manager = K8sKernelManager()
+else:
+    # Default to local, in-process manager for development
+    manager = KernelManager()
+
+IDLE_SECS = float(os.environ.get("ORCA_KERNEL_IDLE_SECS", "600"))
+
+
+@app.on_event("startup")
+async def _start_culler():
+    async def loop():
+        while True:
+            try:
+                culled = await anyio.to_thread.run_sync(manager.cull_idle, IDLE_SECS)
+            except Exception:
+                culled = []
+            # Optionally log culled IDs here
+            await anyio.sleep(10)
+
+    # Start background task
+    asyncio.create_task(loop())
 
 
 @app.get("/healthz")

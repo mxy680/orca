@@ -134,6 +134,25 @@ class KernelManager:
         if not handle:
             raise KeyError("kernel not found")
         try:
-            return handle.client.get_iopub_msg(timeout=timeout)
+            msg = handle.client.get_iopub_msg(timeout=timeout)
+            if msg is not None:
+                handle.last_activity = time.time()
+            return msg
         except Exception:
             return None
+
+    def cull_idle(self, idle_seconds: float) -> list[str]:
+        """Shutdown kernels idle for longer than idle_seconds.
+
+        Returns list of culled kernel IDs.
+        """
+        now = time.time()
+        culled: list[str] = []
+        # Snapshot keys to avoid mutation during iteration
+        with self._lock:
+            items = list(self._kernels.items())
+        for kernel_id, handle in items:
+            if (now - handle.last_activity) > idle_seconds:
+                if self.shutdown_kernel(kernel_id):
+                    culled.append(kernel_id)
+        return culled
