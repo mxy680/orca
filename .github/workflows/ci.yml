@@ -23,8 +23,7 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.3
+        # No version here; use package.json's packageManager
 
       - name: Install dependencies (root)
         run: pnpm install --no-frozen-lockfile
