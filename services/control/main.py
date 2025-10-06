@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict
@@ -49,5 +49,36 @@ async def execute(kernel_id: str, body: ExecuteRequest):
 
 
 # NOTE: For dev, we’ll add WS/SSE streaming in a follow-up step.
-# Keeping API surface stable:
-# GET /kernels/{kernel_id}/stream -> WS/SSE to be implemented.
+@app.websocket("/kernels/{kernel_id}/stream")
+async def stream_kernel(websocket: WebSocket, kernel_id: str):
+    await websocket.accept()
+    if not manager.has_kernel(kernel_id):
+        await websocket.send_json({"event": "error", "detail": "kernel not found"})
+        await websocket.close(code=1008)
+        return
+    try:
+        while True:
+            # Offload blocking read to a worker thread
+            msg = await anyio.to_thread.run_sync(manager.get_iopub_msg, kernel_id, 1.0)
+            if not msg:
+                # send periodic ping/status if needed; otherwise continue polling
+                await anyio.sleep(0.05)
+                continue
+            msg_type = msg["header"]["msg_type"]
+            content = msg.get("content", {})
+            if msg_type == "status" and content.get("execution_state") == "idle":
+                await websocket.send_json({"event": "status", "execution_state": "idle"})
+                continue
+            if msg_type in {"stream", "display_data", "execute_result", "error"}:
+                await websocket.send_json({
+                    "event": msg_type,
+                    "content": content,
+                })
+    except WebSocketDisconnect:
+        # Client disconnected
+        return
+    except Exception as e:
+        try:
+            await websocket.send_json({"event": "error", "detail": str(e)})
+        finally:
+            await websocket.close(code=1011)

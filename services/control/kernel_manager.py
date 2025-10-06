@@ -122,3 +122,18 @@ class KernelManager:
 
         handle.last_activity = time.time()
         return ExecuteResult(cell_id=body.cell_id, outputs=outputs, execution_count=execution_count)
+
+    def get_iopub_msg(self, kernel_id: str, timeout: float = 1.0):
+        """Blocking read of a single IOPub message.
+
+        Intended to be called from a worker thread (e.g., via anyio.to_thread.run_sync).
+        Returns None on timeout.
+        """
+        with self._lock:
+            handle = self._kernels.get(kernel_id)
+        if not handle:
+            raise KeyError("kernel not found")
+        try:
+            return handle.client.get_iopub_msg(timeout=timeout)
+        except Exception:
+            return None
