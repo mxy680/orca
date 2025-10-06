@@ -1,0 +1,26 @@
+[project]
+name = "orca-control"
+version = "0.1.0"
+description = "Orca control plane API (FastAPI)"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.115.4",
+  "uvicorn[standard]==0.30.6",
+  "pydantic==2.9.2",
+  "pydantic-settings==2.6.1",
+  "jupyter-client==8.6.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff==0.6.9",
+]
+
+[tool.uv]
+index-url = "https://pypi.org/simple"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
