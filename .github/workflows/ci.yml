@@ -21,15 +21,16 @@ jobs:
           node-version: '20.x'
           check-latest: true
           cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: apps/web/pnpm-lock.yaml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9.12.3
 
-      - name: Install dependencies (workspace)
-        run: pnpm install -w
+      - name: Install dependencies (web)
+        working-directory: apps/web
+        run: pnpm install
 
       - name: Lint
         working-directory: apps/web
