@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "orca",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm dlx turbo run dev --filter=web",
+    "build": "pnpm dlx turbo run build --filter=web",
+    "lint": "pnpm dlx turbo run lint --filter=web",
+    "start": "pnpm --dir apps/web start"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.3"
+  }
+}
