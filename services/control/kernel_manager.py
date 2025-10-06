@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 from jupyter_client import KernelManager as JKernalManager
 from jupyter_client.blocking import BlockingKernelClient
+from ipykernel.kernelspec import make_ipkernel_cmd
 
 
 class KernelCreateRequest(BaseModel):
@@ -50,9 +51,16 @@ class KernelManager:
             return kernel_id in self._kernels
 
     def create_kernel(self, req: KernelCreateRequest) -> str:
-        kernel_name = req.runtime or "python3"
+        kernel_name = (req.runtime or "python3").strip()
         km = JKernalManager(kernel_name=kernel_name)
-        km.start_kernel()
+        try:
+            # Try to start by kernelspec name (e.g., 'python3')
+            km.start_kernel()
+        except Exception:
+            # Fallback: launch ipykernel directly without requiring a kernelspec installation
+            cmd = make_ipkernel_cmd(None)
+            km = JKernalManager(kernel_cmd=cmd)
+            km.start_kernel()
         client: BlockingKernelClient = km.client()
         client.start_channels()
         # Wait for kernel to be ready
