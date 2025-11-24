@@ -47,6 +47,9 @@ workspace/
 *.h5
 *.hdf5
 
+# Documentation (keep locally, don't track in git)
+markdown/
+
 # Docker
 *.dockerignore
 
