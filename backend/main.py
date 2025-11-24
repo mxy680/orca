@@ -4,8 +4,13 @@ Simple test server for Railway deployment.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import sys
 
 app = FastAPI(title="Orca Test Server", version="0.1.0")
+
+# Log startup info for debugging
+print(f"Starting server...", file=sys.stderr)
+print(f"PORT env var: {os.getenv('PORT', 'not set')}", file=sys.stderr)
 
 # CORS middleware
 app.add_middleware(
