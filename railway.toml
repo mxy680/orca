@@ -1,0 +1,20 @@
+# Railway configuration for Orca Backend
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+dockerContext = "backend"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Railway environment variables
+# Set these in Railway dashboard:
+# - WORKSPACE_ROOT=/app/workspace
+# - DOCKER_IMAGE_NAME=orca-executor:latest
+# - CONTAINER_MEMORY_LIMIT=2g
+# - CONTAINER_CPU_LIMIT=2
+# - REDIS_URL (if using Redis service)
+

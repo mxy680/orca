@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: orca-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: BACKEND_PORT
+        value: 8000
+      - key: WORKSPACE_ROOT
+        value: /app/workspace
+      - key: DOCKER_IMAGE_NAME
+        value: orca-executor:latest
+    healthCheckPath: /health
+

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # Redis for queue and session management
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - WORKSPACE_ROOT=/workspace
+    volumes:
+      - ./workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker-in-Docker
+    depends_on:
+      - redis
+    # Note: Backend needs Docker socket access to create user containers
+
+volumes:
+  redis_data:
+

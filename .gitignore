@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+.nuxt/
+.cache/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Workspace (user data)
+workspace/
+*.csv
+*.json
+*.pkl
+*.h5
+*.hdf5
+
+# Docker
+*.dockerignore
+
+# Logs
+logs/
+*.log
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+

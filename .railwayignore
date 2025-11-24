@@ -1,0 +1,15 @@
+# Files to ignore in Railway builds
+frontend/
+workspace/
+*.md
+.git/
+.env
+.env.local
+test_backend.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
