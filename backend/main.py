@@ -3,7 +3,7 @@ Simple test server for Railway deployment.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import execute
+from routers import execute, sessions
 import os
 import sys
 
@@ -25,6 +25,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(execute.router)
+app.include_router(sessions.router)
 
 
 @app.get("/")

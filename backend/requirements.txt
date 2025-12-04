@@ -1,4 +1,8 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.12.5
+jupyter-client==8.6.1
+ipykernel==6.29.0
+redis==5.0.1
+httpx==0.25.2
 

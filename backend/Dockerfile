@@ -4,20 +4,24 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Copy requirements
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY main.py .
-COPY models.py .
-COPY routers/ ./routers/
+COPY backend/main.py .
+COPY backend/models.py .
+COPY backend/kernel_manager.py .
+COPY backend/kernel_manager_instance.py .
+COPY backend/session_registry.py .
+COPY backend/machine_forwarder.py .
+COPY backend/routers/ ./routers/
 
-# Expose port (Railway sets PORT env var)
+# Expose port (Fly.io/Railway sets PORT env var)
 EXPOSE 8000
 
 # Run the server
-# Railway sets PORT env var, use it or default to 8000
+# Fly.io/Railway sets PORT env var, use it or default to 8000
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
