@@ -112,39 +112,54 @@ class KernelManager:
         stderr = []
         result = None
         
-        # Wait for execution to complete
+        # Collect iopub messages (stdout, stderr, results) until execution completes
         try:
+            # Wait for execute_reply on shell channel (indicates completion)
+            # This is more reliable than waiting for status messages
+            execute_reply = await asyncio.wait_for(
+                kc.get_shell_msg(msg_id),
+                timeout=timeout
+            )
+            
+            # Check if execution had errors
+            if execute_reply['content'].get('status') == 'error':
+                error_content = execute_reply['content']
+                stderr.append('\n'.join(error_content.get('traceback', [])))
+            
+            # Collect all iopub messages (with shorter timeout per message)
+            # These contain stdout, stderr, and execute_results
+            message_timeout = min(5, timeout)
             while True:
-                msg = await asyncio.wait_for(
-                    kc.get_iopub_msg(timeout=timeout),
-                    timeout=timeout
-                )
-                
-                msg_type = msg['msg_type']
-                content = msg['content']
-                
-                if msg_type == 'stream':
-                    if content['name'] == 'stdout':
-                        stdout.append(content['text'])
-                    elif content['name'] == 'stderr':
-                        stderr.append(content['text'])
-                
-                elif msg_type == 'execute_result':
-                    result = content.get('data', {}).get('text/plain', '')
-                
-                elif msg_type == 'error':
-                    stderr.append('\n'.join(content.get('traceback', [])))
-                    break
-                
-                elif msg_type == 'status' and content.get('execution_state') == 'idle':
-                    # Execution completed
+                try:
+                    msg = await asyncio.wait_for(
+                        kc.get_iopub_msg(),
+                        timeout=message_timeout
+                    )
+                    
+                    msg_type = msg['msg_type']
+                    content = msg['content']
+                    
+                    if msg_type == 'stream':
+                        if content['name'] == 'stdout':
+                            stdout.append(content['text'])
+                        elif content['name'] == 'stderr':
+                            stderr.append(content['text'])
+                    
+                    elif msg_type == 'execute_result':
+                        result = content.get('data', {}).get('text/plain', '')
+                    
+                    elif msg_type == 'status' and content.get('execution_state') == 'idle':
+                        # All messages received
+                        break
+                        
+                except asyncio.TimeoutError:
+                    # No more iopub messages, execution is complete
                     break
                     
         except asyncio.TimeoutError:
             raise TimeoutError(f"Code execution timed out after {timeout} seconds")
-        
-        # Get final result
-        final_result = await kc.get_shell_msg(msg_id, timeout=5)
+        except Exception as e:
+            raise Exception(f"Kernel communication error: {str(e)}")
         
         return {
             'stdout': ''.join(stdout),
