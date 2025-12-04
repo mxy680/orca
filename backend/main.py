@@ -3,6 +3,7 @@ Simple test server for Railway deployment.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routers import execute
 import os
 import sys
 
@@ -21,6 +22,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+app.include_router(execute.router)
+
 
 @app.get("/")
 async def root():
@@ -34,13 +38,4 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-
-
-@app.get("/test")
-async def test():
-    return {
-        "message": "Test endpoint works!",
-        "port": os.getenv("PORT", "8000"),
-        "railway": os.getenv("RAILWAY_ENVIRONMENT", "not on Railway")
-    }
 

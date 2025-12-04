@@ -9,8 +9,10 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application files
 COPY main.py .
+COPY models.py .
+COPY routers/ ./routers/
 
 # Expose port (Railway sets PORT env var)
 EXPOSE 8000
