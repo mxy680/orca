@@ -1,7 +1,6 @@
 """
 Simple test server for Railway deployment.
 """
-# Trigger rebuild
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import execute
@@ -9,6 +8,7 @@ import os
 import sys
 
 app = FastAPI(title="Orca Test Server", version="0.1.0")
+
 
 # Log startup info for debugging
 print(f"Starting server...", file=sys.stderr)
