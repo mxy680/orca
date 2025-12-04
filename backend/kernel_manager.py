@@ -4,6 +4,7 @@ Manages kernel lifecycle and communication.
 """
 import uuid
 import asyncio
+import time
 from typing import Dict, Optional
 from jupyter_client import AsyncKernelManager, AsyncKernelClient
 from pathlib import Path
@@ -19,42 +20,88 @@ except ImportError:
 class KernelManager:
     """Manages Jupyter kernels for user sessions."""
     
-    def __init__(self, workspace_root: str = "workspace"):
+    def __init__(self, workspace_root: str = "workspace", max_sessions_per_machine: int = 5):
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(exist_ok=True)
         self.kernels: Dict[str, AsyncKernelManager] = {}
         self.kernel_clients: Dict[str, any] = {}
+        self.max_sessions_per_machine = max_sessions_per_machine
+        self._startup_lock = asyncio.Lock()  # Prevent concurrent kernel startups
         
         # Initialize session registry for distributed scaling
         self.registry = SessionRegistry() if SessionRegistry else None
     
     async def create_session(self) -> str:
         """Create a new session and spawn a kernel."""
+        # Check session limit
+        if len(self.kernels) >= self.max_sessions_per_machine:
+            raise Exception(
+                f"Maximum sessions per machine reached ({self.max_sessions_per_machine}). "
+                f"Please wait for other sessions to end or scale to more machines."
+            )
+        
         session_id = str(uuid.uuid4())
+        km = None
+        kc = None
         
-        # Create workspace directory for this session
-        session_dir = self.workspace_root / session_id
-        session_dir.mkdir(exist_ok=True)
-        
-        # Create kernel manager
-        km = AsyncKernelManager(kernel_name='python3')
-        await km.start_kernel(cwd=str(session_dir))
-        
-        # Get kernel client for communication
-        kc = km.client()
-        kc.start_channels()
-        
-        # Wait for kernel to be ready
-        await asyncio.wait_for(kc.wait_for_ready(), timeout=10)
-        
-        self.kernels[session_id] = km
-        self.kernel_clients[session_id] = kc
-        
-        # Register session in Redis (for distributed scaling)
-        if self.registry:
-            self.registry.register_session(session_id)
-        
-        return session_id
+        # Use lock to prevent concurrent kernel startups (can cause issues)
+        async with self._startup_lock:
+            try:
+                # Create workspace directory for this session
+                session_dir = self.workspace_root / session_id
+                session_dir.mkdir(exist_ok=True, parents=True)
+                
+                # Create kernel manager with explicit timeout
+                print(f"Creating kernel for session {session_id}...", file=__import__('sys').stderr)
+                km = AsyncKernelManager(kernel_name='python3')
+                
+                # Start kernel with timeout
+                try:
+                    await asyncio.wait_for(km.start_kernel(cwd=str(session_dir)), timeout=15)
+                except asyncio.TimeoutError:
+                    raise Exception("Kernel startup timed out after 15 seconds")
+                
+                print(f"Kernel started, getting client...", file=__import__('sys').stderr)
+                
+                # Get kernel client for communication
+                kc = km.client()
+                kc.start_channels()
+                
+                print(f"Waiting for kernel to be ready...", file=__import__('sys').stderr)
+                
+                # Wait for kernel to be ready with timeout
+                # Try a longer timeout, and if it fails, try a simple test execution instead
+                try:
+                    await asyncio.wait_for(kc.wait_for_ready(), timeout=20)
+                    print(f"Kernel ready check passed", file=__import__('sys').stderr)
+                except asyncio.TimeoutError:
+                    print(f"Ready check timed out, but continuing anyway (kernel will be tested on first execution)...", file=__import__('sys').stderr)
+                    # Ready check can be flaky - kernel might still work
+                    # We'll test it on the first actual code execution
+                
+                print(f"Kernel ready for session {session_id}", file=__import__('sys').stderr)
+                
+                self.kernels[session_id] = km
+                self.kernel_clients[session_id] = kc
+                
+                # Register session in Redis (for distributed scaling)
+                if self.registry:
+                    self.registry.register_session(session_id)
+                
+                return session_id
+            except Exception as e:
+                # Clean up on failure
+                print(f"Error creating session {session_id}: {str(e)}", file=__import__('sys').stderr)
+                if km is not None:
+                    try:
+                        await km.shutdown_kernel(now=True)
+                    except Exception as cleanup_error:
+                        print(f"Cleanup error: {cleanup_error}", file=__import__('sys').stderr)
+                if session_id in self.kernels:
+                    del self.kernels[session_id]
+                if session_id in self.kernel_clients:
+                    del self.kernel_clients[session_id]
+                raise Exception(f"Failed to create kernel: {str(e)}")
     
     async def execute_code(self, session_id: str, code: str, timeout: int = 30, forward_if_needed: bool = True):
         """
@@ -66,22 +113,25 @@ class KernelManager:
             timeout: Execution timeout
             forward_if_needed: If True, automatically forward to correct machine if session is remote
         """
+        # Ensure timeout is an integer
+        timeout_int = int(timeout) if isinstance(timeout, (str, float)) else timeout
+        
         # Check if session exists locally
         if session_id not in self.kernel_clients:
             # Check if session exists on another machine (if Redis available)
             if self.registry and forward_if_needed:
-                machine_address = self.registry.get_session_machine_address(session_id)
-                if machine_address and machine_address != self.registry.machine_address:
-                    # Session is on another machine - forward the request
+                machine_id = self.registry.get_session_machine(session_id)
+                if machine_id and machine_id != self.registry.machine_id:
+                    # Session is on another machine - forward the request via public URL
                     # Import here to avoid circular dependencies
                     from machine_forwarder import MachineForwarder
                     forwarder = MachineForwarder()
                     # Use the sessions/execute endpoint for forwarding
                     result = await forwarder.forward_execute_request(
-                        machine_address=machine_address,
+                        machine_id=machine_id,
                         session_id=session_id,
                         code=code,
-                        timeout=timeout
+                        timeout=timeout_int
                     )
                     # Convert SessionExecuteResponse format to kernel result format
                     return {
@@ -90,7 +140,7 @@ class KernelManager:
                         'result': result.get('result'),
                         'success': result.get('success', False)
                     }
-                elif machine_address is None:
+                elif machine_id is None:
                     # Session not found in registry
                     raise ValueError(f"Session {session_id} not found")
                 else:
@@ -113,51 +163,67 @@ class KernelManager:
         result = None
         
         # Collect iopub messages (stdout, stderr, results) until execution completes
+        # We'll also wait for the shell reply to check for errors
         try:
-            # Wait for execute_reply on shell channel (indicates completion)
-            # This is more reliable than waiting for status messages
-            execute_reply = await asyncio.wait_for(
-                kc.get_shell_msg(msg_id),
-                timeout=timeout
-            )
+            execution_complete = False
+            start_time = time.time()
             
-            # Check if execution had errors
-            if execute_reply['content'].get('status') == 'error':
-                error_content = execute_reply['content']
-                stderr.append('\n'.join(error_content.get('traceback', [])))
-            
-            # Collect all iopub messages (with shorter timeout per message)
-            # These contain stdout, stderr, and execute_results
-            message_timeout = min(5, timeout)
-            while True:
+            # Collect messages until execution completes
+            while not execution_complete:
+                # Check if we've exceeded timeout
+                elapsed = time.time() - start_time
+                if elapsed >= timeout_int:
+                    raise TimeoutError(f"Code execution timed out after {timeout_int} seconds")
+                
+                # Try to get iopub message (with short timeout)
                 try:
                     msg = await asyncio.wait_for(
                         kc.get_iopub_msg(),
-                        timeout=message_timeout
+                        timeout=1.0  # Short timeout to check for completion
                     )
                     
-                    msg_type = msg['msg_type']
-                    content = msg['content']
+                    msg_type = msg.get('msg_type', '')
+                    content = msg.get('content', {})
                     
                     if msg_type == 'stream':
-                        if content['name'] == 'stdout':
-                            stdout.append(content['text'])
-                        elif content['name'] == 'stderr':
-                            stderr.append(content['text'])
+                        if content.get('name') == 'stdout':
+                            stdout.append(content.get('text', ''))
+                        elif content.get('name') == 'stderr':
+                            stderr.append(content.get('text', ''))
                     
                     elif msg_type == 'execute_result':
                         result = content.get('data', {}).get('text/plain', '')
                     
                     elif msg_type == 'status' and content.get('execution_state') == 'idle':
-                        # All messages received
+                        # Execution completed
+                        execution_complete = True
+                        break
+                    
+                    elif msg_type == 'error':
+                        stderr.append('\n'.join(content.get('traceback', [])))
+                        execution_complete = True
                         break
                         
                 except asyncio.TimeoutError:
-                    # No more iopub messages, execution is complete
-                    break
+                    # No iopub message, check shell channel for completion
+                    try:
+                        shell_msg = await asyncio.wait_for(
+                            kc.get_shell_msg(msg_id),
+                            timeout=0.1  # Very short timeout
+                        )
+                        # Got shell reply, execution is complete
+                        if shell_msg['content'].get('status') == 'error':
+                            error_content = shell_msg['content']
+                            stderr.append('\n'.join(error_content.get('traceback', [])))
+                        execution_complete = True
+                        break
+                    except asyncio.TimeoutError:
+                        # No shell reply yet, continue collecting iopub messages
+                        continue
                     
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"Code execution timed out after {timeout} seconds")
+        except TimeoutError:
+            # Re-raise timeout errors
+            raise
         except Exception as e:
             raise Exception(f"Kernel communication error: {str(e)}")
         

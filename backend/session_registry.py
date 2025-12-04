@@ -26,18 +26,6 @@ class SessionRegistry:
         # Get current machine ID (use Fly.io machine ID or hostname)
         self.machine_id = os.getenv("FLY_MACHINE_ID", socket.gethostname())
         self.app_name = os.getenv("FLY_APP_NAME", "orca-67")
-        
-        # Get machine's private IP (for Fly.io internal networking)
-        # Fly.io machines can be accessed via: http://[machine-id].vm.[app-name].internal
-        self.machine_address = self._get_machine_address()
-    
-    def _get_machine_address(self) -> str:
-        """Get the internal address for this machine."""
-        # Fly.io internal networking format: http://[machine-id].vm.[app-name].internal:8000
-        if os.getenv("FLY_MACHINE_ID"):
-            return f"http://{self.machine_id}.vm.{self.app_name}.internal:8000"
-        # Fallback for local development
-        return "http://localhost:8000"
     
     def register_session(self, session_id: str, ttl: int = 3600):
         """
@@ -52,7 +40,6 @@ class SessionRegistry:
                     ttl,
                     json.dumps({
                         "machine_id": self.machine_id,
-                        "machine_address": self.machine_address,
                         "session_id": session_id
                     })
                 )
@@ -74,18 +61,6 @@ class SessionRegistry:
                 pass
         return None
     
-    def get_session_machine_address(self, session_id: str) -> Optional[str]:
-        """Get the machine address (for forwarding) where a session is running."""
-        if self.redis_client:
-            try:
-                key = f"session:{session_id}"
-                data = self.redis_client.get(key)
-                if data:
-                    session_info = json.loads(data)
-                    return session_info.get("machine_address")
-            except (RedisError, json.JSONDecodeError):
-                pass
-        return None
     
     def is_session_local(self, session_id: str) -> bool:
         """Check if a session is running on this machine."""
